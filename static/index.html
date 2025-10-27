@@ -10,7 +10,7 @@
   <div id="ui">
     <div id="left">
       <div id="canvas-wrap">
-        <canvas id="town" width="640" height="480"></canvas>
+        <canvas id="town" width="1000" height="1000"></canvas>
         <!-- Mobile touch pad overlay -->
         <div id="touch-pad">Touch & drag to move</div>
       </div>
@@ -86,7 +86,7 @@
 
   // simple map: arcades are a rectangle
   const areas = [
-    {name: 'arcade', x: 460, y: 50, w: 150, h: 120, color: '#e0e7ff', label: 'Arcade'}
+    {name: 'arcade', x: 800, y: 50, w: 150, h: 120, color: '#e0e7ff', label: 'Arcade'}
   ];
 
   // player state
@@ -344,25 +344,55 @@
     if (keys['ArrowUp'] || keys['w']) dy = -2;
     if (keys['ArrowDown'] || keys['s']) dy = 2;
     if (dx || dy) {
-      you.x = Math.max(10, Math.min(630, you.x + dx));
-      you.y = Math.max(10, Math.min(470, you.y + dy));
+      you.x = Math.max(10, Math.min(990, you.x + dx));
+      you.y = Math.max(10, Math.min(990, you.y + dy));
       players[you.id] = you;
       ws.send(JSON.stringify({type: 'move', x: you.x, y: you.y}));
     }
   }
 
-  function checkAreas() {
+  function checkCollisions() {
     if (!you) return;
-    areas.forEach(a => {
-      if (you.x > a.x && you.x < a.x + a.w && you.y > a.y && you.y < a.y + a.h) {
-        // in an area
-        // could show UI prompt
+    
+    // Check for player collisions (within 30 pixels)
+    Object.values(players).forEach(other => {
+      if (other.id === you.id) return; // Skip self
+      const dx = other.x - you.x;
+      const dy = other.y - you.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < 30) {
+        // Players are close enough to chat
+        chatInput.placeholder = `Press Enter to chat with ${other.name}...`;
+        chatInput.dataset.nearPlayer = other.id;
       }
     });
+    
+    // Check for arcade area
+    let inArcade = false;
+    areas.forEach(a => {
+      if (you.x > a.x && you.x < a.x + a.w && you.y > a.y && you.y < a.y + a.h) {
+        if (a.name === 'arcade') {
+          inArcade = true;
+          enterArcade.style.display = 'block';
+        }
+      }
+    });
+    
+    if (!inArcade) {
+      enterArcade.style.display = 'none';
+    }
+  }
+
+  // Clear chat target when moving away
+  function clearChatTarget() {
+    chatInput.placeholder = "Say something...";
+    delete chatInput.dataset.nearPlayer;
   }
 
   setInterval(updatePosition, 50);
-  setInterval(checkAreas, 200);
+  setInterval(checkCollisions, 200);
+  setInterval(clearChatTarget, 500);
   requestAnimationFrame(render);
 
   enterArcade.addEventListener('click', () => {
