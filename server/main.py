@@ -10,7 +10,9 @@ app = FastAPI()
 
 # Serve the static frontend folder under /static to avoid intercepting WebSocket paths
 app.mount("/static", StaticFiles(directory="./static"), name="static")
-
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8001)) # Use PORT env var, default to 8001
+    uvicorn.run(app, host="0.0.0.0", port=port)
 @app.get("/")
 async def index():
     # Serve the SPA entrypoint from the static folder
