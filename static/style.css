@@ -52,6 +52,7 @@ body {
 
 #chat-form {
     display: flex;
+    gap: 8px;
 }
 
 #chat-input {

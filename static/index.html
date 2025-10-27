@@ -76,17 +76,28 @@
     // no-op for now
   }, {passive:false});
 
-  // Make touch-pad visible only on small screens
-  function updateTouchPadVisibility(){
-    if(window.innerWidth <= 800){ touchPad.style.display = 'block'; } else { touchPad.style.display = 'none'; }
+  // Mobile screen handling
+  function updateMobileLayout(){
+    if(window.innerWidth <= 800){
+      document.body.classList.add('mobile');
+    } else {
+      document.body.classList.remove('mobile');
+    }
   }
-  window.addEventListener('resize', updateTouchPadVisibility);
-  updateTouchPadVisibility();
+  window.addEventListener('resize', updateMobileLayout);
+  updateMobileLayout();
 
   // Map areas
   const areas = [
     {name: 'arcade', x: 700, y: 200, w: 200, h: 160, color: '#e0e7ff', label: 'ARCADE', borderColor: '#4f46e5'}
   ];
+
+  // Arcade icon image (loaded once)
+  const arcadeIcon = new Image();
+  let arcadeIconLoaded = false;
+  arcadeIcon.onload = () => { arcadeIconLoaded = true; };
+  arcadeIcon.onerror = () => { arcadeIconLoaded = false; };
+  arcadeIcon.src = '/static/arcade.svg';
 
   // player state
   let you = null;
@@ -122,17 +133,29 @@
       // Draw area background
       ctx.fillStyle = a.color;
       ctx.fillRect(a.x, a.y, a.w, a.h);
-      
+
       // Draw border
       ctx.strokeStyle = a.borderColor || '#333';
       ctx.lineWidth = 4;
       ctx.strokeRect(a.x, a.y, a.w, a.h);
-      
-      // Draw label
-      ctx.font = 'bold 24px sans-serif';
+
+      // If there's an icon for this area, draw it centered
+      if (a.name === 'arcade' && arcadeIconLoaded) {
+        const iconSize = Math.min(96, Math.min(a.w, a.h) - 16);
+        const ix = a.x + (a.w - iconSize) / 2;
+        const iy = a.y + (a.h - iconSize) / 2;
+        try {
+          ctx.drawImage(arcadeIcon, ix, iy, iconSize, iconSize);
+        } catch (e) {
+          // fallback: ignore drawing errors
+        }
+      }
+
+      // Draw label (if icon didn't fully convey meaning)
+      ctx.font = 'bold 20px sans-serif';
       ctx.fillStyle = '#333';
       const textWidth = ctx.measureText(a.label).width;
-      ctx.fillText(a.label, a.x + (a.w - textWidth) / 2, a.y + a.h / 2);
+      ctx.fillText(a.label, a.x + (a.w - textWidth) / 2, a.y + a.h - 10);
     });
 
     // draw players with enhanced visual style
@@ -302,23 +325,20 @@
   // We already log server messages; when a game_state arrives, postMessage to minigameWin
   const origOnMessage = ws.onmessage;
 
-  function refreshPlayersList() {
-    playersList.innerHTML = '';
-    Object.values(players).forEach(p => {
-      const li = document.createElement('li');
-      li.textContent = p.name + (you && p.id === you.id ? ' (you)' : '');
-      playersList.appendChild(li);
+  // We don't need refreshPlayersList anymore since we're showing players directly on the canvas
+  function refreshPlayersList() {}
+
+  // Chat form handling
+  if (chatForm) {
+    chatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      ws.send(JSON.stringify({type: 'chat', content: text}));
+      chatInput.value = '';
+      chatOverlay.classList.add('hidden');
     });
   }
-
-  // chat
-  chatForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const text = chatInput.value.trim();
-    if (!text) return;
-    ws.send(JSON.stringify({type: 'chat', content: text}));
-    chatInput.value = '';
-  });
 
   // Name modal UI
   const changeNameBtn = document.getElementById('change-name');
@@ -356,43 +376,29 @@
     sendJoinIfNeeded();
   });
 
-  // Always show name modal on start
-  showNameModal('Player-' + Math.random().toString(36).slice(2,6));
-  
-  // Handle name save
-  nameSave.addEventListener('click', () => {
-    const value = nameInput.value.trim();
-    if (!value) return;
-    
-    localStorage.setItem('name', value);
-    hideNameModal();
-    sendJoinIfNeeded();
-  });
-  
-  // Also handle enter key
-  nameInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      nameSave.click();
-    }
-  });
+  // Always show name modal on start with a random name
+  const randomName = 'Player-' + Math.random().toString(36).slice(2,6);
+  showNameModal(localStorage.getItem('name') || randomName);
 
   // movement and interactions -- arrow keys / WASD
   const keys = {};
   window.addEventListener('keydown', e => { 
     keys[e.key] = true; 
     
-    // Toggle chat with T key
-    if (e.key === 't' && !chatOverlay.classList.contains('hidden')) {
+    // Toggle chat with T key when near another player
+    if (e.key === 't' && chatInput.dataset.nearPlayer) {
       e.preventDefault();
-      chatOverlay.classList.remove('hidden');
-      chatInput.focus();
+      chatOverlay.classList.toggle('hidden');
+      if (!chatOverlay.classList.contains('hidden')) {
+        chatInput.focus();
+      }
     }
     
     // Start game with Space when in arcade
     if (e.key === ' ' && !gamePrompt.classList.contains('hidden')) {
       e.preventDefault();
       ws.send(JSON.stringify({type: 'start_game', game: 'minigame', zone: 'arcade'}));
+      gamePrompt.classList.add('hidden');
     }
   });
   window.addEventListener('keyup', e => { keys[e.key] = false; });
@@ -471,16 +477,10 @@
     delete chatInput.dataset.nearPlayer;
   }
 
+  // Game loop
   setInterval(updatePosition, 50);
   setInterval(checkCollisions, 200);
-  setInterval(clearChatTarget, 500);
   requestAnimationFrame(render);
-
-  enterArcade.addEventListener('click', () => {
-    if (!you) return;
-    // send invite/start request to server; do not auto-open the minigame — wait for participants
-    ws.send(JSON.stringify({type: 'start_game', game: 'minigame', zone: 'arcade'}));
-  });
 
 
 })();
