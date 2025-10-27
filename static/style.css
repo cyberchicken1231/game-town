@@ -1,0 +1,29 @@
+body { font-family: Inter, system-ui, sans-serif; margin: 0; padding: 12px; background: #f1f5f9; color: #111827; }
+#ui { display:flex; gap:12px; }
+#left { flex: 1; }
+#right { width: 300px; }
+#canvas-wrap { background: #fff; padding:8px; border-radius:8px; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+#town { background: #cfe8c6; display:block; }
+#touch-pad { position: absolute; left: 16px; bottom: 24px; background: rgba(0,0,0,0.5); color: #fff; padding:8px 12px; border-radius:8px; font-size:13px; display:none; pointer-events:none; }
+#chat-box { background:#fff; padding:8px; border-radius:8px; height: 300px; display:flex; flex-direction:column; }
+#messages { flex:1; overflow:auto; padding:6px; font-size:13px; }
+.msg { margin:4px 0; }
+#chat-form { display:flex; gap:6px; margin-top:6px; }
+#chat-input { flex:1; padding:6px; border:1px solid #ddd; border-radius:6px; }
+#players-list { margin-top:12px; background:#fff; padding:8px; border-radius:8px; }
+#actions { margin-top:6px; }
+button { padding:8px 10px; border-radius:8px; border: none; background:#2563eb; color:#fff; cursor:pointer; }
+button:hover { filter:brightness(.95); }
+
+@media (max-width: 800px) {
+	#ui { flex-direction: column; }
+	#right { width: 100%; }
+	#touch-pad { display:block; pointer-events:none; }
+}
+
+/* name modal */
+#name-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(2,6,23,0.6); z-index:9999; }
+#name-modal .modal-inner { background:#fff; color:#04233a; padding:16px; border-radius:10px; width:320px; max-width:90%; box-shadow:0 8px 30px rgba(2,6,23,0.6); }
+#name-modal input { width:100%; padding:8px; margin-top:8px; border:1px solid #ddd; border-radius:6px; }
+#name-modal .modal-actions { margin-top:10px; text-align:right; }
+#name-modal button { background:#2563eb; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }

@@ -1,0 +1,335 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Pong — Minigame</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root{--bg:#0b1220;--fg:#e6eef8;--accent:#4fd1c5}
+      html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial;background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center}
+      .wrap{width:900px;max-width:98%;padding:18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));box-shadow:0 6px 24px rgba(0,0,0,0.6);border-radius:10px}
+      header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+      h1{font-size:18px;margin:0}
+      .controls{display:flex;gap:8px;align-items:center}
+      button{background:var(--accent);border:none;color:#052018;padding:6px 10px;border-radius:6px;cursor:pointer}
+      button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--fg)}
+      #score{font-weight:700}
+      canvas{display:block;background:#071124;border-radius:6px;width:100%;height:auto}
+      .hint{font-size:13px;opacity:0.9;margin-top:8px}
+      .status{margin-left:12px;font-size:13px}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Pong — Minigame</h1>
+        <div class="controls">
+          <div id="score">0 : 0</div>
+          <div class="status" id="status">Ready</div>
+          <button id="start">Start</button>
+          <button id="restart" class="secondary">Reset</button>
+          <button id="toggleAI" class="secondary">Play: 1P (AI)</button>
+        </div>
+      </header>
+
+      <canvas id="pong" width="800" height="500"></canvas>
+      <div class="hint">Controls: Left paddle W / S or mouse, Right paddle ↑ / ↓ (or toggle AI). First to 7 wins.</div>
+    </div>
+
+    <script>
+      (function(){
+        const canvas = document.getElementById('pong');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('start');
+        const restartBtn = document.getElementById('restart');
+        const toggleAIBtn = document.getElementById('toggleAI');
+        const scoreEl = document.getElementById('score');
+        const statusEl = document.getElementById('status');
+
+        // logical size
+        const W = canvas.width, H = canvas.height;
+
+        // parse URL params for side/ai (used when launched as a participant)
+  const params = new URLSearchParams(window.location.search);
+  let localSide = (params.get('side') || 'left');
+  const aiParam = params.get('ai');
+
+        // game state
+        const state = {
+          left: {x: 30, y: H/2 - 50, w: 12, h: 100, speed: 6},
+          right: {x: W - 42, y: H/2 - 50, w: 12, h: 100, speed: 5},
+          ball: {x: W/2, y: H/2, r: 9, vx: 0, vy: 0, speed: 5},
+          scoreL: 0, scoreR: 0,
+          running: false, ai: true, winTo: 7
+        };
+
+        // apply ai param if provided
+        if (aiParam === 'false') {
+          state.ai = false;
+        } else if (aiParam === 'true') {
+          state.ai = true;
+        }
+
+        function applyParticipantSettings(side, ai) {
+          localSide = side || localSide;
+          state.ai = !!ai;
+          // disable toggle if AI explicitly false
+          if (ai === false) {
+            toggleAIBtn.disabled = true;
+            toggleAIBtn.classList.add('secondary');
+          }
+          statusEl.textContent = `Ready — you are ${localSide} paddle`;
+        }
+
+        function resetBall(direction = 0){
+          state.ball.x = W/2; state.ball.y = H/2;
+          const angle = (Math.random()*Math.PI/4) - (Math.PI/8); // -22.5..22.5 deg
+          const speed = 5 + Math.random()*1.5;
+          if(direction === 0) direction = (Math.random() < 0.5) ? -1 : 1;
+          state.ball.vx = speed * Math.cos(angle) * direction;
+          state.ball.vy = speed * Math.sin(angle);
+        }
+
+        function startGame(){
+          state.running = true;
+          state.scoreL = 0; state.scoreR = 0;
+          updateScore();
+          resetBall();
+          statusEl.textContent = 'Playing';
+          requestAnimationFrame(loop);
+        }
+
+        function updateScore(){ scoreEl.textContent = `${state.scoreL} : ${state.scoreR}` }
+
+        function serveTo(side){ resetBall(side === 'left' ? -1 : 1); }
+
+        function draw(){
+          // background
+          ctx.fillStyle = '#071124'; ctx.fillRect(0,0,W,H);
+          // center line
+          ctx.fillStyle = 'rgba(255,255,255,0.06)';
+          for(let y=10;y<H;y+=24) ctx.fillRect(W/2 - 2, y, 4, 12);
+          // paddles
+          ctx.fillStyle = '#e6eef8';
+          ctx.fillRect(state.left.x, state.left.y, state.left.w, state.left.h);
+          ctx.fillRect(state.right.x, state.right.y, state.right.w, state.right.h);
+          // ball
+          ctx.beginPath(); ctx.arc(state.ball.x, state.ball.y, state.ball.r, 0, Math.PI*2); ctx.fill();
+        }
+
+        // input
+        const keys = {};
+        window.addEventListener('keydown', e => { keys[e.key] = true; });
+        window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        // mouse control for local paddle (left or right depending on launch param)
+        canvas.addEventListener('mousemove', e => {
+          const rect = canvas.getBoundingClientRect();
+          const scaleY = canvas.height / rect.height;
+          const y = (e.clientY - rect.top) * scaleY;
+          // center paddle on mouse Y
+          if (localSide === 'left') {
+            state.left.y = Math.max(0, Math.min(H - state.left.h, y - state.left.h/2));
+            if (authoritative && window.opener && !window.opener.closed) {
+              try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'left', y: state.left.y}, window.location.origin); } catch(e){}
+            }
+          } else {
+            state.right.y = Math.max(0, Math.min(H - state.right.h, y - state.right.h/2));
+            if (authoritative && window.opener && !window.opener.closed) {
+              try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'right', y: state.right.y}, window.location.origin); } catch(e){}
+            }
+          }
+        });
+
+        // listen for messages from opener (main window) to switch mode dynamically
+        let authoritative = false;
+        let hostId = params.get('host') || null;
+        window.addEventListener('message', (ev) => {
+          console.log('[minigame] message event', ev.data, ev.origin);
+          // only accept messages from same origin for safety
+          if (ev.origin !== window.location.origin) return;
+          const data = ev.data || {};
+          if (data.type === 'set_mode') {
+            const side = data.side || 'left';
+            const ai = data.ai === undefined ? false : !!data.ai;
+            console.log('[minigame] apply set_mode', {side, ai});
+            applyParticipantSettings(side, ai);
+            hostId = data.host || hostId;
+            authoritative = true;
+            // start automatically when receiving participant settings
+            if (!state.running) { state.running = true; requestAnimationFrame(loop); }
+          } else if (data.type === 'game_state') {
+            // authoritative state from server (proxied by lobby)
+            authoritative = true;
+            hostId = data.host_id || hostId;
+            // apply state directly
+            if (data.ball) state.ball = Object.assign(state.ball, data.ball);
+            if (data.paddles) {
+              // copy paddle positions into the render state
+              if (data.paddles.left && typeof data.paddles.left.y !== 'undefined') state.left.y = data.paddles.left.y;
+              if (data.paddles.right && typeof data.paddles.right.y !== 'undefined') state.right.y = data.paddles.right.y;
+            }
+            if (data.scores) state.scoreL = data.scores.left || state.scoreL, state.scoreR = data.scores.right || state.scoreR;
+            // ensure we render updated positions
+            draw();
+          }
+        });
+
+        console.log('[minigame] loaded with params', {side: localSide, aiParam, urlParams: Object.fromEntries(params.entries())});
+        // expose internal state for debugging in the console
+        window.__pongDebug = {
+          getState: () => state,
+          getLocalSide: () => localSide
+        };
+        // update a global pointer for easier inspection
+        window.__pongState = state;
+        window.__localSide = localSide;
+
+        function clampPaddles(){
+          state.left.y = Math.max(0, Math.min(H - state.left.h, state.left.y));
+          state.right.y = Math.max(0, Math.min(H - state.right.h, state.right.y));
+        }
+
+        function aiMove(){
+          // simple AI: follow ball with some smoothing
+          const target = state.ball.y - state.right.h/2;
+          const dy = target - state.right.y;
+          const max = state.right.speed + Math.abs(state.ball.vx)*0.2;
+          state.right.y += Math.max(-max, Math.min(max, dy*0.15));
+        }
+
+        function step(){
+          if(!state.running) return;
+          // If authoritative mode, do not simulate local physics; only send local paddle input and render server updates
+          if (authoritative) {
+            // local keyboard controls mapped to assigned side (only update paddle positions and notify opener)
+            if (localSide === 'left') {
+              let moved = false;
+              if(keys['w'] || keys['W']) { state.left.y -= state.left.speed; moved = true }
+              if(keys['s'] || keys['S']) { state.left.y += state.left.speed; moved = true }
+              if (moved && window.opener && !window.opener.closed) {
+                try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'left', y: state.left.y}, window.location.origin); } catch(e){}
+              }
+            } else {
+              let moved = false;
+              if(!state.ai){ if(keys['ArrowUp']) { state.right.y -= state.right.speed; moved = true } if(keys['ArrowDown']) { state.right.y += state.right.speed; moved = true } }
+              if (moved && window.opener && !window.opener.closed) {
+                try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'right', y: state.right.y}, window.location.origin); } catch(e){}
+              }
+            }
+            clampPaddles();
+            // rendering will be driven by incoming game_state messages; still call draw for visual updates
+            return;
+          }
+
+          // local (non-authoritative) physics
+          // local keyboard controls mapped to assigned side
+          if (localSide === 'left') {
+            if(keys['w'] || keys['W']) state.left.y -= state.left.speed;
+            if(keys['s'] || keys['S']) state.left.y += state.left.speed;
+          } else {
+            // localSide === 'right'
+            if(!state.ai){ if(keys['ArrowUp']) state.right.y -= state.right.speed; if(keys['ArrowDown']) state.right.y += state.right.speed; }
+          }
+
+          if(state.ai) aiMove();
+          clampPaddles();
+
+          // move ball
+          state.ball.x += state.ball.vx; state.ball.y += state.ball.vy;
+
+          // top/bottom collision
+          if(state.ball.y - state.ball.r <= 0){ state.ball.y = state.ball.r; state.ball.vy *= -1 }
+          if(state.ball.y + state.ball.r >= H){ state.ball.y = H - state.ball.r; state.ball.vy *= -1 }
+
+          // paddle collision
+          // left
+          if(state.ball.x - state.ball.r <= state.left.x + state.left.w){
+            if(state.ball.y > state.left.y && state.ball.y < state.left.y + state.left.h){
+              state.ball.x = state.left.x + state.left.w + state.ball.r;
+              const rel = (state.ball.y - (state.left.y + state.left.h/2)) / (state.left.h/2); // -1..1
+              const speed = Math.hypot(state.ball.vx, state.ball.vy) * 1.05;
+              const angle = rel * (Math.PI/3); // up to ±60deg
+              state.ball.vx = speed * Math.cos(angle);
+              state.ball.vy = speed * Math.sin(angle);
+            }
+          }
+          // right
+          if(state.ball.x + state.ball.r >= state.right.x){
+            if(state.ball.y > state.right.y && state.ball.y < state.right.y + state.right.h){
+              state.ball.x = state.right.x - state.ball.r;
+              const rel = (state.ball.y - (state.right.y + state.right.h/2)) / (state.right.h/2);
+              const speed = Math.hypot(state.ball.vx, state.ball.vy) * 1.05;
+              const angle = rel * (Math.PI/3);
+              state.ball.vx = -speed * Math.cos(angle);
+              state.ball.vy = speed * Math.sin(angle);
+            }
+          }
+
+          // score
+          if(state.ball.x < 0){ state.scoreR += 1; updateScore(); statusEl.textContent = 'Point!'; serveTo('right'); if(checkWin()) return }
+          if(state.ball.x > W){ state.scoreL += 1; updateScore(); statusEl.textContent = 'Point!'; serveTo('left'); if(checkWin()) return }
+        }
+
+        function checkWin(){
+          if(state.scoreL >= state.winTo || state.scoreR >= state.winTo){
+            state.running = false;
+            const winner = state.scoreL > state.scoreR ? 'Left' : 'Right';
+            statusEl.textContent = winner + ' wins!';
+            return true;
+          }
+          return false;
+        }
+
+        function loop(){
+          step(); draw();
+          if(state.running) requestAnimationFrame(loop);
+        }
+
+        // buttons
+        startBtn.addEventListener('click', () => {
+          if(!state.running){ startGame(); }
+        });
+
+        restartBtn.addEventListener('click', () => {
+          state.running = false;
+          state.scoreL = 0; state.scoreR = 0; updateScore();
+          resetBall(); state.running = true; statusEl.textContent = 'Playing'; requestAnimationFrame(loop);
+        });
+
+        toggleAIBtn.addEventListener('click', () => {
+          state.ai = !state.ai;
+          toggleAIBtn.textContent = state.ai ? 'Play: 1P (AI)' : 'Play: 2P (Local)';
+          statusEl.textContent = state.ai ? 'AI enabled' : '2-player';
+        });
+
+        // If launched with ai=false via URL params (i.e. a real participant), disable the toggle and show side
+        if (aiParam === 'false') {
+          toggleAIBtn.disabled = true;
+          toggleAIBtn.classList.add('secondary');
+        }
+        // show assigned side
+        statusEl.textContent = `Ready — you are ${localSide} paddle`;
+
+        // If this window was opened with participant params, auto-apply settings and auto-start the match
+        if (params.has('side') || params.has('ai')) {
+          // apply settings explicitly to ensure UI/state matches URL
+          applyParticipantSettings(localSide, state.ai);
+          // start the game automatically for participants
+          if (!state.running) { state.running = true; requestAnimationFrame(loop); }
+        }
+
+        // initial ball
+        resetBall(); updateScore();
+
+        // expose simple restart with space
+        window.addEventListener('keydown', e => {
+          if(e.code === 'Space'){
+            e.preventDefault(); if(!state.running) { state.running = true; requestAnimationFrame(loop); }
+          }
+        });
+
+      })();
+    </script>
+  </body>
+</html>
