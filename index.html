@@ -1,0 +1,378 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Town Hub</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="ui">
+    <div id="left">
+      <div id="canvas-wrap">
+        <canvas id="town" width="640" height="480"></canvas>
+        <!-- Mobile touch pad overlay -->
+        <div id="touch-pad">Touch & drag to move</div>
+      </div>
+      <div id="actions">
+        <button id="enter-arcade">Enter Arcade (minigame)</button>
+      </div>
+    </div>
+
+    <div id="right">
+      <div id="chat-box">
+        <div id="messages"></div>
+        <form id="chat-form">
+          <input id="chat-input" placeholder="Say something..." autocomplete="off"/>
+          <button>Send</button>
+        </form>
+      </div>
+      <div id="players-list">
+        <h3>Players</h3>
+        <button id="change-name" class="secondary">Name</button>
+        <ul id="players"></ul>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('town');
+  const ctx = canvas.getContext('2d');
+
+  // Mobile helpers
+  const touchPad = document.getElementById('touch-pad');
+  function getCanvasCoordsFromTouch(touch) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (touch.clientX - rect.left) * scaleX, y: (touch.clientY - rect.top) * scaleY };
+  }
+
+  // Touch drag to move player (mobile): update position and send move immediately
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (!you) return;
+    const t = e.touches[0];
+    const pos = getCanvasCoordsFromTouch(t);
+    you.x = Math.max(10, Math.min(canvas.width - 10, pos.x));
+    you.y = Math.max(10, Math.min(canvas.height - 10, pos.y));
+    players[you.id] = you;
+    ws.send(JSON.stringify({type: 'move', x: you.x, y: you.y}));
+  }, {passive:false});
+
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!you) return;
+    const t = e.touches[0];
+    const pos = getCanvasCoordsFromTouch(t);
+    you.x = Math.max(10, Math.min(canvas.width - 10, pos.x));
+    you.y = Math.max(10, Math.min(canvas.height - 10, pos.y));
+    players[you.id] = you;
+    ws.send(JSON.stringify({type: 'move', x: you.x, y: you.y}));
+  }, {passive:false});
+
+  canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    // no-op for now
+  }, {passive:false});
+
+  // Make touch-pad visible only on small screens
+  function updateTouchPadVisibility(){
+    if(window.innerWidth <= 800){ touchPad.style.display = 'block'; } else { touchPad.style.display = 'none'; }
+  }
+  window.addEventListener('resize', updateTouchPadVisibility);
+  updateTouchPadVisibility();
+
+  // simple map: arcades are a rectangle
+  const areas = [
+    {name: 'arcade', x: 460, y: 50, w: 150, h: 120, color: '#e0e7ff', label: 'Arcade'}
+  ];
+
+  // player state
+  let you = null;
+  const players = {}; // id -> player
+
+  // WebSocket
+  const loc = window.location;
+  const wsProtocol = (loc.protocol === 'https:') ? 'wss' : 'ws';
+  const ws = new WebSocket(wsProtocol + '://' + loc.host + '/ws');
+  let needToJoin = false;
+  let hasJoined = false;
+
+  // UI hooks
+  const messages = document.getElementById('messages');
+  const playersList = document.getElementById('players');
+  const chatForm = document.getElementById('chat-form');
+  const chatInput = document.getElementById('chat-input');
+  const enterArcade = document.getElementById('enter-arcade');
+  let minigameWin = null;
+
+  function addMessage(text) {
+    const d = document.createElement('div'); d.className = 'msg'; d.textContent = text;
+    messages.appendChild(d); messages.scrollTop = messages.scrollHeight;
+  }
+
+  function render() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // background
+    ctx.fillStyle = '#cfe8c6'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // draw areas
+    areas.forEach(a => {
+      ctx.fillStyle = a.color;
+      ctx.fillRect(a.x, a.y, a.w, a.h);
+      ctx.fillStyle = '#333'; ctx.fillText(a.label, a.x+6, a.y+14);
+    });
+
+    // draw players
+    Object.values(players).forEach(p => {
+      ctx.fillStyle = (you && p.id === you.id) ? '#ff6b6b' : '#264653';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif';
+      ctx.fillText(p.name, p.x - 16, p.y - 14);
+    });
+
+    requestAnimationFrame(render);
+  }
+
+  ws.addEventListener('open', () => {
+    // Always prompt the user for their display name when they connect.
+    // Prefill with stored name if available, otherwise suggest a random one.
+    const stored = localStorage.getItem('name');
+    const suggestion = stored || ('Player-' + Math.random().toString(36).slice(2,6));
+    // show modal to confirm/change name on connect
+    showNameModal(suggestion);
+    needToJoin = true;
+  });
+
+  // helper to send join when user selects a name
+  function sendJoinIfNeeded() {
+    const name = localStorage.getItem('name');
+    if (!hasJoined && name && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'join', name}));
+      hasJoined = true;
+      needToJoin = false;
+    }
+  }
+
+  // support tapping the canvas to center player (mobile friendly)
+  canvas.addEventListener('click', (e) => {
+    if (!you) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    you.x = Math.max(10, Math.min(canvas.width - 10, x));
+    you.y = Math.max(10, Math.min(canvas.height - 10, y));
+    players[you.id] = you;
+    ws.send(JSON.stringify({type: 'move', x: you.x, y: you.y}));
+  });
+
+  ws.addEventListener('message', (ev) => {
+    const msg = JSON.parse(ev.data);
+    console.log('[lobby] ws message', msg);
+    if (msg.type === 'join_rejected') {
+      console.log('[lobby] join rejected', msg);
+      // show modal with suggestion
+      showNameModal(msg.suggestion || '');
+      addMessage('Name rejected by server: ' + (msg.reason || 'duplicate'));
+      return;
+    }
+    if (msg.type === 'welcome') {
+      you = msg.you;
+      hasJoined = true;
+      msg.players.forEach(p => players[p.id] = p);
+      addMessage('Connected as ' + you.name);
+    } else if (msg.type === 'player_joined') {
+      players[msg.player.id] = msg.player;
+      addMessage(msg.player.name + ' joined.');
+    } else if (msg.type === 'player_left') {
+      delete players[msg.id];
+      addMessage('A player left.');
+    } else if (msg.type === 'player_moved') {
+      players[msg.player.id] = msg.player;
+    } else if (msg.type === 'chat') {
+      addMessage(msg.from + ': ' + msg.content);
+    } else if (msg.type === 'game_invite') {
+      // received an invitation to join a minigame
+      // don't prompt the host
+      console.log('[lobby] received game_invite', msg);
+      if (!you || (msg.host && you.id === msg.host.id)) return;
+      const accept = confirm(`${msg.host.name} invites you to play ${msg.game} in ${msg.zone}. Join?`);
+      if (accept) {
+        ws.send(JSON.stringify({type: 'join_game', host_id: msg.host.id}));
+        console.log('[lobby] sent join_game', {host_id: msg.host.id});
+      } else {
+        // optionally send decline or just ignore
+        addMessage(`You declined ${msg.host.name}'s invite.`);
+      }
+
+    } else if (msg.type === 'game_pending') {
+      // host feedback that invite was sent
+      addMessage(`Invite sent for ${msg.game} by ${msg.host.name}`);
+
+    } else if (msg.type === 'game_started') {
+      console.log('[lobby] received game_started', msg);
+      addMessage(`${msg.host.name} started ${msg.game} in ${msg.zone}`);
+      // open minigame only for participants; if participants include side assignments, pass them
+      if (msg.zone === 'arcade' && msg.participants && you) {
+        const me = msg.participants.find(p => p.id === you.id);
+        if (me) {
+          const side = (me.side || 'left');
+          const ai = 'false';
+          const hostId = (msg.host && msg.host.id) ? msg.host.id : '';
+          const url = `/static/minigame.html?side=${encodeURIComponent(side)}&ai=${encodeURIComponent(ai)}&host=${encodeURIComponent(hostId)}`;
+          // if we already opened a minigame window earlier, send it a message to switch to 2-player mode
+          try {
+            if (minigameWin && !minigameWin.closed) {
+              console.log('[lobby] posting set_mode to existing minigameWin', {side, ai:false, host: hostId});
+              minigameWin.postMessage({type: 'set_mode', side, ai: false, host: hostId}, window.location.origin);
+              try { minigameWin.focus(); } catch(e){}
+            } else {
+              console.log('[lobby] opening minigame url', url);
+              minigameWin = window.open(url, '_blank', 'width=900,height=640');
+            }
+          } catch (e) {
+            console.error('[lobby] failed to message/open minigame window', e);
+            // fallback: open a new window
+            minigameWin = window.open(url, '_blank', 'width=900,height=640');
+          }
+        }
+      }
+    }
+    // forward authoritative game_state messages to minigame window if present
+    if (msg.type === 'game_state') {
+      console.log('[lobby] game_state received', msg);
+      try {
+        if (minigameWin && !minigameWin.closed) {
+          minigameWin.postMessage(msg, window.location.origin);
+        }
+      } catch (e) { console.error('[lobby] failed to post game_state', e); }
+    }
+    refreshPlayersList();
+  });
+
+  // Receive messages from minigame window and forward to server (proxy)
+  window.addEventListener('message', (ev) => {
+    // accept only same-origin
+    if (ev.origin !== window.location.origin) return;
+    const data = ev.data || {};
+    if (data.type === 'paddle_move') {
+      // forward to server with host reference
+      const payload = {type: 'paddle_move', host_id: data.host, side: data.side, y: data.y};
+      console.log('[lobby] forwarding paddle_move', payload);
+      ws.send(JSON.stringify(payload));
+    }
+  });
+
+  // Forward authoritative game_state from server to minigame window
+  // server sends messages of type 'game_state' with host_id
+  // We already log server messages; when a game_state arrives, postMessage to minigameWin
+  const origOnMessage = ws.onmessage;
+
+  function refreshPlayersList() {
+    playersList.innerHTML = '';
+    Object.values(players).forEach(p => {
+      const li = document.createElement('li');
+      li.textContent = p.name + (you && p.id === you.id ? ' (you)' : '');
+      playersList.appendChild(li);
+    });
+  }
+
+  // chat
+  chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    ws.send(JSON.stringify({type: 'chat', content: text}));
+    chatInput.value = '';
+  });
+
+  // Name modal UI
+  const changeNameBtn = document.getElementById('change-name');
+  // create modal elements
+  const nameModal = document.createElement('div');
+  nameModal.id = 'name-modal';
+  nameModal.innerHTML = `
+    <div class="modal-inner">
+      <h3>Pick a display name</h3>
+      <input id="name-input" placeholder="Your name" />
+      <div class="modal-actions">
+        <button id="name-save">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(nameModal);
+  const nameInput = document.getElementById('name-input');
+  const nameSave = document.getElementById('name-save');
+
+  function showNameModal(prefill) {
+    nameModal.style.display = 'flex';
+    nameInput.value = prefill || '';
+    nameInput.focus();
+  }
+  function hideNameModal(){ nameModal.style.display = 'none'; }
+
+  changeNameBtn.addEventListener('click', () => { showNameModal(localStorage.getItem('name') || ''); });
+
+  nameSave.addEventListener('click', () => {
+    const v = nameInput.value.trim();
+    if (!v) return;
+    localStorage.setItem('name', v);
+    hideNameModal();
+    addMessage('Name set to ' + v);
+    // if ws open but we haven't joined, send join now
+    sendJoinIfNeeded();
+  });
+
+  // show modal on first load if no name
+  if (!localStorage.getItem('name')) {
+    setTimeout(() => showNameModal(''), 200);
+  }
+
+  // movement -- arrow keys / WASD
+  const keys = {};
+  window.addEventListener('keydown', e => { keys[e.key] = true; });
+  window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+  function updatePosition() {
+    if (!you) return;
+    let dx = 0, dy = 0;
+    if (keys['ArrowLeft'] || keys['a']) dx = -2;
+    if (keys['ArrowRight'] || keys['d']) dx = 2;
+    if (keys['ArrowUp'] || keys['w']) dy = -2;
+    if (keys['ArrowDown'] || keys['s']) dy = 2;
+    if (dx || dy) {
+      you.x = Math.max(10, Math.min(630, you.x + dx));
+      you.y = Math.max(10, Math.min(470, you.y + dy));
+      players[you.id] = you;
+      ws.send(JSON.stringify({type: 'move', x: you.x, y: you.y}));
+    }
+  }
+
+  function checkAreas() {
+    if (!you) return;
+    areas.forEach(a => {
+      if (you.x > a.x && you.x < a.x + a.w && you.y > a.y && you.y < a.y + a.h) {
+        // in an area
+        // could show UI prompt
+      }
+    });
+  }
+
+  setInterval(updatePosition, 50);
+  setInterval(checkAreas, 200);
+  requestAnimationFrame(render);
+
+  enterArcade.addEventListener('click', () => {
+    if (!you) return;
+    // send invite/start request to server; do not auto-open the minigame — wait for participants
+    ws.send(JSON.stringify({type: 'start_game', game: 'minigame', zone: 'arcade'}));
+  });
+
+
+})();
+</script>
+</body>
+</html>
