@@ -7,32 +7,16 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div id="ui">
-    <div id="left">
-      <div id="canvas-wrap">
-        <canvas id="town" width="1000" height="1000"></canvas>
-        <!-- Mobile touch pad overlay -->
-        <div id="touch-pad">Touch & drag to move</div>
-      </div>
-      <div id="actions">
-        <button id="enter-arcade">Enter Arcade (minigame)</button>
-      </div>
+  <div id="game-container">
+    <canvas id="town"></canvas>
+    <div id="chat-overlay" class="hidden">
+      <div id="messages"></div>
+      <form id="chat-form">
+        <input id="chat-input" placeholder="Say something..." autocomplete="off"/>
+      </form>
     </div>
-
-    <div id="right">
-      <div id="chat-box">
-        <div id="messages"></div>
-        <form id="chat-form">
-          <input id="chat-input" placeholder="Say something..." autocomplete="off"/>
-          <button>Send</button>
-        </form>
-      </div>
-      <div id="players-list">
-        <h3>Players</h3>
-        <button id="change-name" class="secondary">Name</button>
-        <ul id="players"></ul>
-      </div>
-    </div>
+    <div id="game-prompt" class="hidden">Press SPACE to start game</div>
+    <button id="change-name" class="overlay-button">Name</button>
   </div>
 
 <script>
@@ -40,8 +24,17 @@
   const canvas = document.getElementById('town');
   const ctx = canvas.getContext('2d');
 
-  // Mobile helpers
-  const touchPad = document.getElementById('touch-pad');
+  // Set canvas size to window size
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // UI elements
+  const chatOverlay = document.getElementById('chat-overlay');
+  const gamePrompt = document.getElementById('game-prompt');
   function getCanvasCoordsFromTouch(touch) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -331,9 +324,24 @@
     setTimeout(() => showNameModal(''), 200);
   }
 
-  // movement -- arrow keys / WASD
+  // movement and interactions -- arrow keys / WASD
   const keys = {};
-  window.addEventListener('keydown', e => { keys[e.key] = true; });
+  window.addEventListener('keydown', e => { 
+    keys[e.key] = true; 
+    
+    // Toggle chat with T key
+    if (e.key === 't' && !chatOverlay.classList.contains('hidden')) {
+      e.preventDefault();
+      chatOverlay.classList.remove('hidden');
+      chatInput.focus();
+    }
+    
+    // Start game with Space when in arcade
+    if (e.key === ' ' && !gamePrompt.classList.contains('hidden')) {
+      e.preventDefault();
+      ws.send(JSON.stringify({type: 'start_game', game: 'minigame', zone: 'arcade'}));
+    }
+  });
   window.addEventListener('keyup', e => { keys[e.key] = false; });
 
   function updatePosition() {
@@ -355,6 +363,7 @@
     if (!you) return;
     
     // Check for player collisions (within 30 pixels)
+    let nearPlayer = false;
     Object.values(players).forEach(other => {
       if (other.id === you.id) return; // Skip self
       const dx = other.x - you.x;
@@ -363,10 +372,16 @@
       
       if (distance < 30) {
         // Players are close enough to chat
-        chatInput.placeholder = `Press Enter to chat with ${other.name}...`;
+        chatOverlay.classList.remove('hidden');
+        chatInput.placeholder = `Chat with ${other.name}...`;
         chatInput.dataset.nearPlayer = other.id;
+        nearPlayer = true;
       }
     });
+    
+    if (!nearPlayer) {
+      chatOverlay.classList.add('hidden');
+    }
     
     // Check for arcade area
     let inArcade = false;
@@ -374,13 +389,13 @@
       if (you.x > a.x && you.x < a.x + a.w && you.y > a.y && you.y < a.y + a.h) {
         if (a.name === 'arcade') {
           inArcade = true;
-          enterArcade.style.display = 'block';
+          gamePrompt.classList.remove('hidden');
         }
       }
     });
     
     if (!inArcade) {
-      enterArcade.style.display = 'none';
+      gamePrompt.classList.add('hidden');
     }
   }
 
