@@ -503,6 +503,8 @@
     
     if (!inArcade) {
       gamePrompt.classList.add('hidden');
+      // ensure the arcade submenu is hidden when leaving the arcade area
+      try { if (arcadeMenu) arcadeMenu.classList.add('hidden'); } catch(e){}
     }
   }
 

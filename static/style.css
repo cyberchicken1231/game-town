@@ -6,6 +6,9 @@ body {
     overflow: hidden;
 }
 
+/* utility hidden class used by multiple overlays */
+.hidden { display: none; }
+
 #game-container {
     position: relative;
     width: 100vw;
