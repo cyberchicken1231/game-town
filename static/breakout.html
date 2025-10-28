@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Breakout — Minigame</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root{--bg:#0b1220;--fg:#e6eef8;--accent:#f59e0b}
+      html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial;background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center}
+      .wrap{width:900px;max-width:98%;padding:18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));box-shadow:0 6px 24px rgba(0,0,0,0.6);border-radius:10px}
+      header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+      h1{font-size:18px;margin:0}
+      .controls{display:flex;gap:8px;align-items:center}
+      button{background:var(--accent);border:none;color:#052018;padding:6px 10px;border-radius:6px;cursor:pointer}
+      button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--fg)}
+      #score{font-weight:700}
+      canvas{display:block;background:#071124;border-radius:6px;width:100%;height:auto}
+      .hint{font-size:13px;opacity:0.9;margin-top:8px}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Breakout — Minigame</h1>
+        <div class="controls">
+          <div id="score">Bricks: 0 | Lives: 3</div>
+          <div id="status">Ready</div>
+          <button id="start">Start</button>
+          <button id="restart" class="secondary">Reset</button>
+        </div>
+      </header>
+
+      <canvas id="breakout" width="800" height="600"></canvas>
+      <div class="hint">Controls: Move paddle with mouse or touch. Clear all bricks to win.</div>
+    </div>
+
+    <script>
+    (function(){
+      const canvas = document.getElementById('breakout');
+      const ctx = canvas.getContext('2d');
+      const startBtn = document.getElementById('start');
+      const restartBtn = document.getElementById('restart');
+      const scoreEl = document.getElementById('score');
+      const statusEl = document.getElementById('status');
+
+      const W = canvas.width, H = canvas.height;
+
+      const state = {
+        paddle: {w:120,h:12,x: (W-120)/2, y: H-40, speed: 8},
+        ball: {x: W/2, y: H-60, r:8, vx: 4*(Math.random()<0.5?1:-1), vy: -4},
+        bricks: [],
+        rows: 5, cols: 8,
+        running:false, lives:3, bricksLeft:0
+      };
+
+      function buildBricks(){
+        state.bricks = [];
+        const padding = 8; const offsetTop = 60; const brickW = (W - (state.cols+1)*padding)/state.cols; const brickH = 20;
+        for(let r=0;r<state.rows;r++){
+          for(let c=0;c<state.cols;c++){
+            const x = padding + c*(brickW+padding);
+            const y = offsetTop + r*(brickH+padding);
+            state.bricks.push({x,y,w:brickW,h:brickH,alive:true});
+          }
+        }
+        state.bricksLeft = state.bricks.length;
+        updateScoreDisplay();
+      }
+
+      function updateScoreDisplay(){ scoreEl.textContent = `Bricks: ${state.bricksLeft} | Lives: ${state.lives}` }
+
+      function resetBall(){ state.ball.x = W/2; state.ball.y = H-80; state.ball.vx = 4*(Math.random()<0.5?1:-1); state.ball.vy = -4 }
+      function startGame(){ state.running = true; state.lives = 3; buildBricks(); resetBall(); statusEl.textContent='Playing'; requestAnimationFrame(loop); }
+
+      function draw(){
+        ctx.fillStyle='#071124'; ctx.fillRect(0,0,W,H);
+        // bricks
+        state.bricks.forEach(b=>{ if(!b.alive) return; ctx.fillStyle='#f59e0b'; ctx.fillRect(b.x,b.y,b.w,b.h); ctx.strokeStyle='rgba(0,0,0,0.2)'; ctx.strokeRect(b.x,b.y,b.w,b.h); });
+        // paddle
+        ctx.fillStyle='#e6eef8'; ctx.fillRect(state.paddle.x,state.paddle.y,state.paddle.w,state.paddle.h);
+        // ball
+        ctx.beginPath(); ctx.arc(state.ball.x,state.ball.y,state.ball.r,0,Math.PI*2); ctx.fill();
+      }
+
+      function clampPaddle(){ state.paddle.x = Math.max(0, Math.min(W - state.paddle.w, state.paddle.x)); }
+
+      // input
+      const keys = {};
+      window.addEventListener('keydown', e=>keys[e.key]=true); window.addEventListener('keyup', e=>keys[e.key]=false);
+      canvas.addEventListener('mousemove', e=>{ const rect=canvas.getBoundingClientRect(); const scaleX=canvas.width/rect.width; const mx=(e.clientX-rect.left)*scaleX; state.paddle.x = mx - state.paddle.w/2; clampPaddle(); });
+      // touch
+      let touching=false;
+      canvas.addEventListener('touchstart', e=>{ e.preventDefault(); touching=true; const t=e.touches[0]; const rect=canvas.getBoundingClientRect(); const scaleX=canvas.width/rect.width; const mx=(t.clientX-rect.left)*scaleX; state.paddle.x = mx - state.paddle.w/2; clampPaddle(); }, {passive:false});
+      canvas.addEventListener('touchmove', e=>{ e.preventDefault(); if(!touching) return; const t=e.touches[0]; const rect=canvas.getBoundingClientRect(); const scaleX=canvas.width/rect.width; const mx=(t.clientX-rect.left)*scaleX; state.paddle.x = mx - state.paddle.w/2; clampPaddle(); }, {passive:false});
+      canvas.addEventListener('touchend', e=>{ e.preventDefault(); touching=false; }, {passive:false});
+
+      function step(){
+        if(!state.running) return;
+        // keyboard
+        if(keys['ArrowLeft'] || keys['a']) state.paddle.x -= state.paddle.speed;
+        if(keys['ArrowRight'] || keys['d']) state.paddle.x += state.paddle.speed;
+        clampPaddle();
+        // move ball
+        state.ball.x += state.ball.vx; state.ball.y += state.ball.vy;
+        // walls
+        if(state.ball.x - state.ball.r <= 0){ state.ball.x = state.ball.r; state.ball.vx *= -1 }
+        if(state.ball.x + state.ball.r >= W){ state.ball.x = W - state.ball.r; state.ball.vx *= -1 }
+        if(state.ball.y - state.ball.r <= 0){ state.ball.y = state.ball.r; state.ball.vy *= -1 }
+        // paddle collision
+        if(state.ball.y + state.ball.r >= state.paddle.y){
+          if(state.ball.x > state.paddle.x && state.ball.x < state.paddle.x + state.paddle.w){
+            state.ball.y = state.paddle.y - state.ball.r; state.ball.vy *= -1; // reflect
+            // tweak vx based on hit location
+            const rel = (state.ball.x - (state.paddle.x + state.paddle.w/2)) / (state.paddle.w/2);
+            state.ball.vx += rel * 2;
+          }
+        }
+        // bottom -> lose life
+        if(state.ball.y - state.ball.r > H){ state.lives -= 1; updateScoreDisplay(); if(state.lives <= 0){ state.running=false; statusEl.textContent='Game Over'; } else { resetBall(); } }
+        // brick collisions
+        state.bricks.forEach(b=>{ if(!b.alive) return; if(state.ball.x + state.ball.r > b.x && state.ball.x - state.ball.r < b.x + b.w && state.ball.y + state.ball.r > b.y && state.ball.y - state.ball.r < b.y + b.h){ b.alive=false; state.bricksLeft -= 1; // simple reflect
+            state.ball.vy *= -1; updateScoreDisplay(); } });
+        // win
+        if(state.bricksLeft <= 0){ state.running=false; statusEl.textContent='You Win!'; }
+      }
+
+      function loop(){ step(); draw(); if(state.running) requestAnimationFrame(loop); }
+
+      startBtn.addEventListener('click', ()=>{ if(!state.running) startGame(); });
+      restartBtn.addEventListener('click', ()=>{ state.running=false; state.lives=3; buildBricks(); resetBall(); state.running=true; statusEl.textContent='Playing'; requestAnimationFrame(loop); });
+
+      // auto-start if opened as host param (optional)
+      const params = new URLSearchParams(window.location.search);
+      if(params.has('host')){ /* launched from lobby; auto-start */ startGame(); }
+
+      buildBricks(); updateScoreDisplay(); draw();
+
+    })();
+    </script>
+  </body>
+</html>

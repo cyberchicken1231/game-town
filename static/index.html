@@ -16,6 +16,14 @@
       </form>
     </div>
     <div id="game-prompt" class="hidden">Press SPACE to start game</div>
+    <div id="arcade-menu" class="hidden" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(11,18,32,0.95);padding:18px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.6);z-index:999">
+      <h3 style="color:#e6eef8;margin:0 0 8px 0">Choose Arcade Game</h3>
+      <div style="display:flex;gap:8px">
+        <button id="arcade-pong">Pong</button>
+        <button id="arcade-breakout" class="secondary">Breakout</button>
+        <button id="arcade-cancel" class="secondary">Cancel</button>
+      </div>
+    </div>
     <button id="change-name" class="overlay-button">Name</button>
   </div>
 
@@ -224,6 +232,28 @@
     ws.send(JSON.stringify({type: 'move', x: you.x, y: you.y}));
   });
 
+  // Arcade menu handlers
+  const arcadeMenu = document.getElementById('arcade-menu');
+  const arcadePong = document.getElementById('arcade-pong');
+  const arcadeBreakout = document.getElementById('arcade-breakout');
+  const arcadeCancel = document.getElementById('arcade-cancel');
+
+  function showArcadeMenu(){ arcadeMenu.classList.remove('hidden'); }
+  function hideArcadeMenu(){ arcadeMenu.classList.add('hidden'); }
+
+  arcadePong.addEventListener('click', () => {
+    ws.send(JSON.stringify({type: 'start_game', game: 'pong', zone: 'arcade'}));
+    hideArcadeMenu(); gamePrompt.classList.add('hidden');
+  });
+  arcadeBreakout.addEventListener('click', () => {
+    ws.send(JSON.stringify({type: 'start_game', game: 'breakout', zone: 'arcade'}));
+    hideArcadeMenu(); gamePrompt.classList.add('hidden');
+  });
+  arcadeCancel.addEventListener('click', () => { hideArcadeMenu(); });
+
+  // also allow tapping the prompt to open menu
+  gamePrompt.addEventListener('click', () => { showArcadeMenu(); });
+
   ws.addEventListener('message', (ev) => {
     const msg = JSON.parse(ev.data);
     console.log('[lobby] ws message', msg);
@@ -277,12 +307,17 @@
           const side = (me.side || 'left');
           const ai = 'false';
           const hostId = (msg.host && msg.host.id) ? msg.host.id : '';
-          const url = `/static/minigame.html?side=${encodeURIComponent(side)}&ai=${encodeURIComponent(ai)}&host=${encodeURIComponent(hostId)}`;
+          let url = `/static/minigame.html?side=${encodeURIComponent(side)}&ai=${encodeURIComponent(ai)}&host=${encodeURIComponent(hostId)}`;
+          // if breakout was chosen, open the breakout page instead
+          if (msg.game === 'breakout') {
+            url = `/static/breakout.html?host=${encodeURIComponent(hostId)}`;
+          }
           // if we already opened a minigame window earlier, send it a message to switch to 2-player mode
           try {
             if (minigameWin && !minigameWin.closed) {
               console.log('[lobby] posting set_mode to existing minigameWin', {side, ai:false, host: hostId});
-              minigameWin.postMessage({type: 'set_mode', side, ai: false, host: hostId}, window.location.origin);
+              // postMessage for pong; for breakout the page will ignore extra fields
+              minigameWin.postMessage({type: 'set_mode', side, ai: false, host: hostId, game: msg.game}, window.location.origin);
               try { minigameWin.focus(); } catch(e){}
             } else {
               console.log('[lobby] opening minigame url', url);
@@ -395,11 +430,10 @@
       }
     }
     
-    // Start game with Space when in arcade
+    // Start game with Space when in arcade -> show arcade menu to pick a game
     if (e.key === ' ' && !gamePrompt.classList.contains('hidden')) {
       e.preventDefault();
-      ws.send(JSON.stringify({type: 'start_game', game: 'minigame', zone: 'arcade'}));
-      gamePrompt.classList.add('hidden');
+      showArcadeMenu();
     }
   });
   window.addEventListener('keyup', e => { keys[e.key] = false; });
