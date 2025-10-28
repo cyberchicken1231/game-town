@@ -141,6 +141,54 @@
           }
         });
 
+        // touch control for mobile: mirror mouse behaviour and forward to opener when authoritative
+        let isTouching = false;
+        canvas.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          if (!state.running) return;
+          const t = e.touches[0];
+          const rect = canvas.getBoundingClientRect();
+          const scaleY = canvas.height / rect.height;
+          const y = (t.clientY - rect.top) * scaleY;
+          if (localSide === 'left') {
+            state.left.y = Math.max(0, Math.min(H - state.left.h, y - state.left.h/2));
+            if (authoritative && window.opener && !window.opener.closed) {
+              try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'left', y: state.left.y}, window.location.origin); } catch(e){}
+            }
+          } else {
+            state.right.y = Math.max(0, Math.min(H - state.right.h, y - state.right.h/2));
+            if (authoritative && window.opener && !window.opener.closed) {
+              try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'right', y: state.right.y}, window.location.origin); } catch(e){}
+            }
+          }
+          isTouching = true;
+        }, {passive:false});
+
+        canvas.addEventListener('touchmove', (e) => {
+          e.preventDefault();
+          if (!state.running || !isTouching) return;
+          const t = e.touches[0];
+          const rect = canvas.getBoundingClientRect();
+          const scaleY = canvas.height / rect.height;
+          const y = (t.clientY - rect.top) * scaleY;
+          if (localSide === 'left') {
+            state.left.y = Math.max(0, Math.min(H - state.left.h, y - state.left.h/2));
+            if (authoritative && window.opener && !window.opener.closed) {
+              try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'left', y: state.left.y}, window.location.origin); } catch(e){}
+            }
+          } else {
+            state.right.y = Math.max(0, Math.min(H - state.right.h, y - state.right.h/2));
+            if (authoritative && window.opener && !window.opener.closed) {
+              try { window.opener.postMessage({type:'paddle_move', host: hostId, side: 'right', y: state.right.y}, window.location.origin); } catch(e){}
+            }
+          }
+        }, {passive:false});
+
+        canvas.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          isTouching = false;
+        }, {passive:false});
+
         // listen for messages from opener (main window) to switch mode dynamically
         let authoritative = false;
         let hostId = params.get('host') || null;
