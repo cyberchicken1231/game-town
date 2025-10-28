@@ -116,6 +116,11 @@ async def ws_endpoint(ws: WebSocket):
                 # message to request launching a minigame at a location
                 game = msg.get("game", "minigame")
                 zone = msg.get("zone", "arcade")
+                # Special-case: breakout is single-player — start immediately for host only
+                if game == 'breakout':
+                    # send game_started only to the host websocket so they open the breakout page
+                    await ws.send_text(json.dumps({"type": "game_started", "host": player, "game": game, "zone": zone, "participants": [player]}))
+                    continue
                 # if more than 1 player, send an invite to others instead of starting immediately
                 other_count = len(players) - 1
                 if other_count > 0:
