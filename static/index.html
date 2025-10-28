@@ -314,7 +314,7 @@
       console.log('[lobby] received game_started', msg);
       addMessage(`${msg.host.name} started ${msg.game} in ${msg.zone}`);
       // open minigame only for participants; if participants include side assignments, pass them
-      if (msg.zone === 'arcade' && msg.participants && you) {
+  if ((msg.game === 'pong' || msg.game === 'breakout') && msg.participants && you) {
         const me = msg.participants.find(p => p.id === you.id);
         if (me) {
           const side = (me.side || 'left');
