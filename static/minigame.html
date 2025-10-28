@@ -149,7 +149,7 @@
           // only accept messages from same origin for safety
           if (ev.origin !== window.location.origin) return;
           const data = ev.data || {};
-          if (data.type === 'set_mode') {
+            if (data.type === 'set_mode') {
             const side = data.side || 'left';
             const ai = data.ai === undefined ? false : !!data.ai;
             console.log('[minigame] apply set_mode', {side, ai});
@@ -158,7 +158,7 @@
             authoritative = true;
             // start automatically when receiving participant settings
             if (!state.running) { state.running = true; requestAnimationFrame(loop); }
-          } else if (data.type === 'game_state') {
+            } else if (data.type === 'game_state') {
             // authoritative state from server (proxied by lobby)
             authoritative = true;
             hostId = data.host_id || hostId;
@@ -169,7 +169,13 @@
               if (data.paddles.left && typeof data.paddles.left.y !== 'undefined') state.left.y = data.paddles.left.y;
               if (data.paddles.right && typeof data.paddles.right.y !== 'undefined') state.right.y = data.paddles.right.y;
             }
-            if (data.scores) state.scoreL = data.scores.left || state.scoreL, state.scoreR = data.scores.right || state.scoreR;
+              // Correctly apply scores from authoritative server state.
+              // Avoid using `||` which treats 0 as falsy and would incorrectly leave previous scores when a side has 0 points.
+              if (data.scores) {
+                if (typeof data.scores.left !== 'undefined') state.scoreL = data.scores.left;
+                if (typeof data.scores.right !== 'undefined') state.scoreR = data.scores.right;
+                updateScore();
+              }
             // ensure we render updated positions
             draw();
           }
