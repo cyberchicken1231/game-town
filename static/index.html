@@ -97,16 +97,23 @@
   updateMobileLayout();
 
   // Map areas
+  // Two separate buildings: Pong and Breakout
   const areas = [
-    {name: 'arcade', x: 700, y: 200, w: 200, h: 160, color: '#e0e7ff', label: 'ARCADE', borderColor: '#4f46e5'}
+    {name: 'pong', x: 600, y: 200, w: 180, h: 160, color: '#e0e7ff', label: 'PONG', borderColor: '#4f46e5', icon: '/static/pong.svg'},
+    {name: 'breakout', x: 900, y: 200, w: 180, h: 160, color: '#fef3c7', label: 'BREAKOUT', borderColor: '#f59e0b', icon: '/static/breakout.svg'}
   ];
 
-  // Arcade icon image (loaded once)
-  const arcadeIcon = new Image();
-  let arcadeIconLoaded = false;
-  arcadeIcon.onload = () => { arcadeIconLoaded = true; };
-  arcadeIcon.onerror = () => { arcadeIconLoaded = false; };
-  arcadeIcon.src = '/static/arcade.svg';
+  // Preload area icons
+  const areaIcons = {};
+  areas.forEach(a => {
+    if (a.icon) {
+      const img = new Image();
+      img.onload = () => { a.iconLoaded = true; };
+      img.onerror = () => { a.iconLoaded = false; };
+      img.src = a.icon;
+      areaIcons[a.name] = img;
+    }
+  });
 
   // player state
   let you = null;
@@ -148,19 +155,17 @@
       ctx.lineWidth = 4;
       ctx.strokeRect(a.x, a.y, a.w, a.h);
 
-      // If there's an icon for this area, draw it centered
-      if (a.name === 'arcade' && arcadeIconLoaded) {
+      // Draw icon if loaded
+      if (a.icon && areaIcons[a.name] && a.iconLoaded !== false) {
         const iconSize = Math.min(96, Math.min(a.w, a.h) - 16);
         const ix = a.x + (a.w - iconSize) / 2;
         const iy = a.y + (a.h - iconSize) / 2;
         try {
-          ctx.drawImage(arcadeIcon, ix, iy, iconSize, iconSize);
-        } catch (e) {
-          // fallback: ignore drawing errors
-        }
+          ctx.drawImage(areaIcons[a.name], ix, iy, iconSize, iconSize);
+        } catch (e) {}
       }
 
-      // Draw label (if icon didn't fully convey meaning)
+      // Draw label
       ctx.font = 'bold 20px sans-serif';
       ctx.fillStyle = '#333';
       const textWidth = ctx.measureText(a.label).width;
@@ -251,8 +256,16 @@
   });
   arcadeCancel.addEventListener('click', () => { hideArcadeMenu(); });
 
-  // also allow tapping the prompt to open menu
-  gamePrompt.addEventListener('click', () => { showArcadeMenu(); });
+  // also allow tapping the prompt to start the game
+  gamePrompt.addEventListener('click', () => {
+    if (gamePrompt.textContent.includes('Pong')) {
+      ws.send(JSON.stringify({type: 'start_game', game: 'pong', zone: 'pong'}));
+      gamePrompt.classList.add('hidden');
+    } else if (gamePrompt.textContent.includes('Breakout')) {
+      ws.send(JSON.stringify({type: 'start_game', game: 'breakout', zone: 'breakout'}));
+      gamePrompt.classList.add('hidden');
+    }
+  });
 
   ws.addEventListener('message', (ev) => {
     const msg = JSON.parse(ev.data);
@@ -430,10 +443,16 @@
       }
     }
     
-    // Start game with Space when in arcade -> show arcade menu to pick a game
+    // Start game with Space when in a building
     if (e.key === ' ' && !gamePrompt.classList.contains('hidden')) {
       e.preventDefault();
-      showArcadeMenu();
+      if (gamePrompt.textContent.includes('Pong')) {
+        ws.send(JSON.stringify({type: 'start_game', game: 'pong', zone: 'pong'}));
+        gamePrompt.classList.add('hidden');
+      } else if (gamePrompt.textContent.includes('Breakout')) {
+        ws.send(JSON.stringify({type: 'start_game', game: 'breakout', zone: 'breakout'}));
+        gamePrompt.classList.add('hidden');
+      }
     }
   });
   window.addEventListener('keyup', e => { keys[e.key] = false; });
@@ -490,20 +509,22 @@
       chatOverlay.classList.add('hidden');
     }
     
-    // Check for arcade area
-    let inArcade = false;
+    // Check for each building
+    let inPong = false, inBreakout = false;
     areas.forEach(a => {
       if (you.x > a.x && you.x < a.x + a.w && you.y > a.y && you.y < a.y + a.h) {
-        if (a.name === 'arcade') {
-          inArcade = true;
-          gamePrompt.classList.remove('hidden');
-        }
+        if (a.name === 'pong') inPong = true;
+        if (a.name === 'breakout') inBreakout = true;
       }
     });
-    
-    if (!inArcade) {
+    if (inPong) {
+      gamePrompt.textContent = 'Press SPACE to play Pong';
+      gamePrompt.classList.remove('hidden');
+    } else if (inBreakout) {
+      gamePrompt.textContent = 'Press SPACE to play Breakout';
+      gamePrompt.classList.remove('hidden');
+    } else {
       gamePrompt.classList.add('hidden');
-      // ensure the arcade submenu is hidden when leaving the arcade area
       try { if (arcadeMenu) arcadeMenu.classList.add('hidden'); } catch(e){}
     }
   }
