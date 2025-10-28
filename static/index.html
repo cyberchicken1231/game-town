@@ -457,24 +457,27 @@
   });
   window.addEventListener('keyup', e => { keys[e.key] = false; });
 
+  // Player movement speed (change this value to adjust speed)
+  const PLAYER_SPEED = 6;
+
   function updatePosition() {
     if (!you) return;
     let dx = 0, dy = 0;
-    if (keys['ArrowLeft'] || keys['a']) dx = -4;
-    if (keys['ArrowRight'] || keys['d']) dx = 4;
-    if (keys['ArrowUp'] || keys['w']) dy = -4;
-    if (keys['ArrowDown'] || keys['s']) dy = 4;
-    
+    if (keys['ArrowLeft'] || keys['a']) dx = -PLAYER_SPEED;
+    if (keys['ArrowRight'] || keys['d']) dx = PLAYER_SPEED;
+    if (keys['ArrowUp'] || keys['w']) dy = -PLAYER_SPEED;
+    if (keys['ArrowDown'] || keys['s']) dy = PLAYER_SPEED;
+
     // Diagonal movement normalization
     if (dx && dy) {
       dx *= 0.707; // 1/√2
       dy *= 0.707;
     }
-    
+
     if (dx || dy) {
       const newX = Math.max(20, Math.min(GAME_WIDTH - 20, you.x + dx));
       const newY = Math.max(20, Math.min(GAME_HEIGHT - 20, you.y + dy));
-      
+
       // Only send update if position actually changed
       if (newX !== you.x || newY !== you.y) {
         you.x = newX;
