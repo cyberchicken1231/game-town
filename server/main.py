@@ -110,7 +110,31 @@ async def ws_endpoint(ws: WebSocket):
 
             elif msg["type"] == "chat":
                 content = msg.get("content", "")[:1000]
-                await broadcast({"type": "chat", "from": player["name"], "content": content}, exclude=None)
+                # Only broadcast to nearby players (within 200 units)
+                nearby_players = [
+                    pid for pid, p in players.items()
+                    if pid != player_id and
+                    ((p["x"] - player["x"]) ** 2 + (p["y"] - player["y"]) ** 2) <= 200 ** 2
+                ]
+                await send_to_players(nearby_players, {
+                    "type": "chat",
+                    "from": player["name"],
+                    "content": content
+                })
+                # Also send to the sender
+                await ws.send_text(json.dumps({
+                    "type": "chat",
+                    "from": player["name"],
+                    "content": content
+                }))
+
+            elif msg["type"] == "global_chat":
+                content = msg.get("content", "")[:1000]
+                await broadcast({
+                    "type": "global_chat",
+                    "from": player["name"],
+                    "content": content
+                }, exclude=None)
 
             elif msg["type"] == "start_game":
                 # message to request launching a minigame at a location
